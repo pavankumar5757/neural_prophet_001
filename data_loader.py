@@ -1,14 +1,12 @@
 """Data loading and preprocessing module for time series forecasting.
-
 Handles:
-- Loading data from Excel files
+- Loading data from CSV files
 - Data validation and cleaning
 - Missing value handling
 - Outlier detection and treatment
 - Normalization/standardization
 - Temporal data splitting
 """
-
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -16,9 +14,7 @@ from sklearn.impute import SimpleImputer
 from typing import Tuple, Optional, Dict, List
 import warnings
 warnings.filterwarnings('ignore')
-
 from config import DataConfig
-
 
 class DataLoader:
     """Load and preprocess time series data."""
@@ -35,259 +31,223 @@ class DataLoader:
         self.target_scaler = None
         
     def load_data(self) -> pd.DataFrame:
-        """Load data from Excel file.
+        """Load data from CSV file.
         
         Returns:
-            pd.DataFrame: Loaded data with datetime index.
+            pd.DataFrame: Raw data loaded from CSV.
         """
-        try:
-            print(f"Loading data from: {self.config.data_file_path}")
-            data = pd.read_excel(
-                self.config.data_file_path,
-                sheet_name=self.config.sheet_name
-            )
+        print("="*60)
+        print("LOADING DATA")
+        print("="*60)
+        
+        # Load CSV file
+        data = pd.read_csv(
+            self.config.data_file_path,
+            parse_dates=[self.config.date_column]
+        )
+        
+        print(f"✓ Data loaded from: {self.config.data_file_path}")
+        print(f"  - Rows: {len(data)}")
+        print(f"  - Columns: {list(data.columns)}")
+        print(f"  - Date range: {data[self.config.date_column].min()} to {data[self.config.date_column].max()}")
+        
+        # Validate required columns
+        if self.config.date_column not in data.columns:
+            raise ValueError(f"Date column '{self.config.date_column}' not found in data")
+        if self.config.target_column not in data.columns:
+            raise ValueError(f"Target column '{self.config.target_column}' not found in data")
             
-            # Convert date column to datetime
-            if self.config.date_column in data.columns:
-                data[self.config.date_column] = pd.to_datetime(
-                    data[self.config.date_column]
-                )
-                data = data.sort_values(by=self.config.date_column).reset_index(drop=True)
-            
-            self.data = data
-            print(f"Data loaded successfully. Shape: {data.shape}")
-            print(f"Date range: {data[self.config.date_column].min()} to {data[self.config.date_column].max()}")
-            
-            return data
-            
-        except Exception as e:
-            print(f"Error loading data: {str(e)}")
-            raise
+        return data
     
-    def validate_data(self, data: pd.DataFrame) -> Tuple[bool, List[str]]:
-        """Validate data integrity.
+    def validate_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Validate data for required structure and content.
         
         Args:
-            data: DataFrame to validate.
+            data: Input DataFrame.
             
         Returns:
-            Tuple[bool, List[str]]: Validation result and list of issues.
+            pd.DataFrame: Validated data.
         """
-        issues = []
+        print("\nValidating data...")
         
-        # Check required columns
-        required_cols = [self.config.date_column, self.config.target_column]
-        for col in required_cols:
-            if col not in data.columns:
-                issues.append(f"Missing required column: {col}")
+        # Ensure date column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(data[self.config.date_column]):
+            data[self.config.date_column] = pd.to_datetime(data[self.config.date_column])
         
-        # Check for empty data
-        if data.empty:
-            issues.append("Data is empty")
+        # Sort by date
+        data = data.sort_values(self.config.date_column).reset_index(drop=True)
         
         # Check for duplicates
-        if data[self.config.date_column].duplicated().any():
-            issues.append(f"Duplicate dates found: {data[self.config.date_column].duplicated().sum()}")
+        duplicates = data[self.config.date_column].duplicated().sum()
+        if duplicates > 0:
+            print(f"  ⚠ Warning: {duplicates} duplicate dates found, keeping first occurrence")
+            data = data.drop_duplicates(subset=[self.config.date_column], keep='first')
         
-        # Check for NaN values
-        if data[self.config.target_column].isna().any():
-            nan_count = data[self.config.target_column].isna().sum()
-            issues.append(f"Missing values in target column: {nan_count}")
-        
-        # Check for non-numeric target
-        try:
-            pd.to_numeric(data[self.config.target_column])
-        except:
-            issues.append("Target column contains non-numeric values")
-        
-        if issues:
-            print("\nData Validation Issues:")
-            for issue in issues:
-                print(f"  - {issue}")
-        else:
-            print("Data validation passed successfully!")
-        
-        return len(issues) == 0, issues
+        print("✓ Data validated successfully")
+        return data
     
-    def handle_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Handle missing values in the dataset.
+    def handle_missing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Handle missing values in dataset.
         
         Args:
-            data: DataFrame with potential missing values.
+            data: Input DataFrame.
             
         Returns:
-            pd.DataFrame: DataFrame with missing values handled.
+            pd.DataFrame: Data with missing values handled.
         """
-        if data[self.config.target_column].isna().sum() == 0:
-            print("No missing values found.")
+        print("\nHandling missing values...")
+        
+        missing_count = data[self.config.target_column].isna().sum()
+        print(f"  - Missing values in target: {missing_count}")
+        
+        if missing_count == 0:
+            print("✓ No missing values found")
             return data
         
-        original_na = data[self.config.target_column].isna().sum()
-        print(f"Handling {original_na} missing values using '{self.config.handle_missing}' method...")
-        
-        if self.config.handle_missing == "drop":
-            data = data.dropna(subset=[self.config.target_column]).reset_index(drop=True)
-        
-        elif self.config.handle_missing == "forward_fill":
+        if self.config.handle_missing == 'interpolate':
+            data[self.config.target_column] = data[self.config.target_column].interpolate(method='linear')
+            print("✓ Missing values interpolated")
+        elif self.config.handle_missing == 'forward_fill':
             data[self.config.target_column] = data[self.config.target_column].fillna(method='ffill')
-            data[self.config.target_column] = data[self.config.target_column].fillna(method='bfill')
-        
-        elif self.config.handle_missing == "interpolate":
-            data[self.config.target_column] = data[self.config.target_column].interpolate(
-                method='linear', limit_direction='both'
-            )
-        
-        remaining_na = data[self.config.target_column].isna().sum()
-        print(f"Remaining missing values: {remaining_na}")
+            print("✓ Missing values forward-filled")
+        elif self.config.handle_missing == 'drop':
+            data = data.dropna(subset=[self.config.target_column])
+            print(f"✓ Dropped {missing_count} rows with missing values")
+        else:
+            print("⚠ Unknown method, keeping missing values")
         
         return data
     
-    def detect_outliers(self, data: pd.DataFrame, 
-                       method: str = None) -> Tuple[pd.DataFrame, np.ndarray]:
-        """Detect and handle outliers using specified method.
+    def detect_outliers(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+        """Detect outliers using z-score method.
         
         Args:
-            data: DataFrame to process.
-            method: Outlier detection method ('iqr', 'zscore', 'isolation_forest').
+            data: Input DataFrame.
             
         Returns:
-            Tuple[pd.DataFrame, np.ndarray]: Cleaned data and outlier mask.
+            Tuple of (data, outlier_flags)
         """
-        method = method or self.config.outlier_detection_method
-        y = data[self.config.target_column].values
+        print("\nDetecting outliers...")
         
-        if method == "iqr":
-            Q1 = np.percentile(y, 25)
-            Q3 = np.percentile(y, 75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - self.config.iqr_multiplier * IQR
-            upper_bound = Q3 + self.config.iqr_multiplier * IQR
-            outliers = (y < lower_bound) | (y > upper_bound)
+        if not self.config.remove_outliers:
+            print("✓ Outlier detection skipped (remove_outliers=False)")
+            return data, pd.Series([False] * len(data))
         
-        elif method == "zscore":
-            mean = np.mean(y)
-            std = np.std(y)
-            outliers = np.abs((y - mean) / std) > self.config.outlier_threshold
+        # Calculate z-scores
+        mean = data[self.config.target_column].mean()
+        std = data[self.config.target_column].std()
+        z_scores = np.abs((data[self.config.target_column] - mean) / std)
         
-        elif method == "isolation_forest":
-            from sklearn.ensemble import IsolationForest
-            iso_forest = IsolationForest(contamination=0.05, random_state=42)
-            outliers = iso_forest.fit_predict(y.reshape(-1, 1)) == -1
-        
-        else:
-            outliers = np.zeros(len(y), dtype=bool)
-        
+        outliers = z_scores > self.config.outlier_threshold
         outlier_count = outliers.sum()
-        if outlier_count > 0:
-            print(f"Detected {outlier_count} outliers using {method} method.")
+        
+        print(f"  - Outliers detected: {outlier_count}")
+        
+        if outlier_count > 0 and self.config.remove_outliers:
+            print(f"✓ Outliers flagged (threshold: {self.config.outlier_threshold} std)")
         
         return data, outliers
     
-    def normalize_data(self, data: pd.DataFrame, 
-                      fit_scaler: bool = True) -> pd.DataFrame:
-        """Normalize data using configured method.
+    def normalize_data(self, data: pd.DataFrame, fit_scaler: bool = True) -> pd.DataFrame:
+        """Normalize or standardize the target variable.
         
         Args:
-            data: DataFrame to normalize.
-            fit_scaler: Whether to fit a new scaler or use existing one.
+            data: Input DataFrame.
+            fit_scaler: Whether to fit the scaler (True for training data).
             
         Returns:
-            pd.DataFrame: Normalized DataFrame.
+            pd.DataFrame: Data with normalized target.
         """
-        if self.config.normalization_method == "minmax":
-            if fit_scaler or self.scaler is None:
-                self.scaler = MinMaxScaler()
-                self.scaler.fit(data[[self.config.target_column]])
-            
-            data[self.config.target_column] = self.scaler.transform(
+        print("\nNormalizing data...")
+        
+        if not self.config.normalize:
+            print("✓ Normalization skipped (normalize=False)")
+            return data
+        
+        if fit_scaler:
+            self.target_scaler = MinMaxScaler(feature_range=(0, 1))
+            data[self.config.target_column] = self.target_scaler.fit_transform(
                 data[[self.config.target_column]]
             )
-        
-        elif self.config.normalization_method == "standard":
-            if fit_scaler or self.scaler is None:
-                self.scaler = StandardScaler()
-                self.scaler.fit(data[[self.config.target_column]])
-            
-            data[self.config.target_column] = self.scaler.transform(
+            print("✓ Data normalized (fitted scaler)")
+        else:
+            if self.target_scaler is None:
+                raise ValueError("Scaler not fitted. Call with fit_scaler=True first.")
+            data[self.config.target_column] = self.target_scaler.transform(
                 data[[self.config.target_column]]
             )
+            print("✓ Data normalized (using existing scaler)")
         
-        print(f"Data normalized using {self.config.normalization_method} method.")
         return data
     
-    def inverse_normalize(self, normalized_values: np.ndarray) -> np.ndarray:
-        """Inverse normalize predictions back to original scale.
+    def inverse_transform(self, values: np.ndarray) -> np.ndarray:
+        """Inverse transform normalized values back to original scale.
         
         Args:
-            normalized_values: Normalized values.
+            values: Normalized values.
             
         Returns:
             np.ndarray: Original scale values.
         """
-        if self.scaler is None:
-            print("Warning: Scaler not fitted. Returning original values.")
-            return normalized_values
-        
-        return self.scaler.inverse_transform(normalized_values.reshape(-1, 1)).flatten()
+        if self.target_scaler is None:
+            return values
+        return self.target_scaler.inverse_transform(values.reshape(-1, 1)).flatten()
     
-    def split_temporal_data(self, data: pd.DataFrame, 
-                           train_size: float = None,
-                           validation_size: float = None) -> Dict[str, pd.DataFrame]:
-        """Split data into train, validation, and test sets maintaining temporal order.
+    def split_temporal_data(
+        self, 
+        data: pd.DataFrame, 
+        train_ratio: float = 0.7, 
+        val_ratio: float = 0.15
+    ) -> Dict[str, pd.DataFrame]:
+        """Split data temporally (chronologically) into train/val/test sets.
         
         Args:
-            data: DataFrame to split.
-            train_size: Proportion of data for training.
-            validation_size: Proportion of data for validation.
+            data: Input DataFrame.
+            train_ratio: Proportion of data for training.
+            val_ratio: Proportion of data for validation.
             
         Returns:
-            Dict[str, pd.DataFrame]: Dictionary with 'train', 'validation', 'test' splits.
+            Dictionary with 'train', 'val', and 'test' DataFrames.
         """
-        train_size = train_size or (1 - self.config.test_size - self.config.validation_size)
-        validation_size = validation_size or self.config.validation_size
+        print("\nSplitting data temporally...")
         
         n = len(data)
-        train_end = int(n * train_size)
-        val_end = train_end + int(n * validation_size)
+        train_size = int(n * train_ratio)
+        val_size = int(n * val_ratio)
         
-        train = data.iloc[:train_end].reset_index(drop=True)
-        validation = data.iloc[train_end:val_end].reset_index(drop=True)
-        test = data.iloc[val_end:].reset_index(drop=True)
+        train_data = data.iloc[:train_size].copy()
+        val_data = data.iloc[train_size:train_size + val_size].copy()
+        test_data = data.iloc[train_size + val_size:].copy()
         
-        print(f"\nTemporal Data Split:")
-        print(f"  Train: {len(train)} samples ({100*train_size:.1f}%)")
-        print(f"  Validation: {len(validation)} samples ({100*validation_size:.1f}%)")
-        print(f"  Test: {len(test)} samples ({100*self.config.test_size:.1f}%)")
+        print(f"  - Train: {len(train_data)} samples ({train_ratio*100:.1f}%)")
+        print(f"  - Val:   {len(val_data)} samples ({val_ratio*100:.1f}%)")
+        print(f"  - Test:  {len(test_data)} samples ({(1-train_ratio-val_ratio)*100:.1f}%)")
+        print("✓ Data split completed")
         
         return {
-            'train': train,
-            'validation': validation,
-            'test': test
+            'train': train_data,
+            'val': val_data,
+            'test': test_data
         }
     
-    def preprocess_complete(self, data: pd.DataFrame = None) -> pd.DataFrame:
-        """Execute complete preprocessing pipeline.
+    def preprocess_complete(self) -> pd.DataFrame:
+        """Complete preprocessing pipeline.
         
-        Args:
-            data: DataFrame to process. If None, loads from file.
-            
         Returns:
-            pd.DataFrame: Fully preprocessed DataFrame.
+            pd.DataFrame: Fully preprocessed data.
         """
-        if data is None:
-            data = self.load_data()
-        
         print("\n" + "="*60)
-        print("PREPROCESSING PIPELINE")
+        print("STARTING COMPLETE PREPROCESSING PIPELINE")
         print("="*60)
         
+        # Load
+        data = self.load_data()
+        
         # Validate
-        valid, issues = self.validate_data(data)
-        if not valid:
-            raise ValueError(f"Data validation failed: {issues}")
+        data = self.validate_data(data)
         
         # Handle missing values
-        data = self.handle_missing_values(data)
+        data = self.handle_missing(data)
         
         # Detect outliers (flag but don't remove)
         data, outliers = self.detect_outliers(data)
@@ -300,7 +260,6 @@ class DataLoader:
         
         self.data = data
         return data
-
 
 if __name__ == "__main__":
     from config import get_config
