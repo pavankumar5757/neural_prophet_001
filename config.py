@@ -35,159 +35,128 @@ class ModelConfig:
     
     def __post_init__(self):
         if self.hidden_layers is None:
-            self.hidden_layers = [self.hidden_size // (2**i) for i in range(self.num_hidden_layers)]
+            self.hidden_layers = [self.hidden_size] * self.num_hidden_layers
 
 @dataclass
 class DataConfig:
-    """Data processing and pipeline parameters."""
+    """Data loading and preprocessing parameters."""
     
-    # File Paths
-    data_file_path: str = "data/Trend DC SG AG (1).xlsx"
-    output_dir: str = "outputs"
-    models_dir: str = "models"
-    plots_dir: str = "plots"
+    # File paths
+    data_file_path: str = "data/data.csv"
+    output_dir: str = "outputs/"
+    plots_dir: str = "plots/"
+    models_dir: str = "models/"
     
-    # Data Settings
-    sheet_name: str = "Sheet1"
-    date_column: str = "Date"
-    target_column: str = "Demand"
+    # CSV parameters (removed sheet_name)
+    date_column: str = "ds"  # Column name for dates
+    target_column: str = "y"  # Column name for target variable
     
-    # Data Processing
-    test_size: float = 0.15
-    validation_size: float = 0.1
-    normalization_method: str = "minmax"  # 'minmax' or 'standard'
-    handle_missing: str = "interpolate"  # 'drop', 'forward_fill', 'interpolate'
-    
-    # Outlier Detection
-    outlier_detection_method: str = "iqr"  # 'iqr', 'zscore', 'isolation_forest'
-    outlier_threshold: float = 3.0  # For z-score
-    iqr_multiplier: float = 1.5
-    
-    # Feature Settings
-    use_lag_features: bool = True
-    use_rolling_stats: bool = True
-    use_temporal_features: bool = True
-    use_holidays: bool = True
-    use_seasonality: bool = True
-    
-    # Lag Configuration
-    lag_periods: List[int] = None
+    # Data preprocessing
+    handle_missing: str = "interpolate"  # Options: 'interpolate', 'forward_fill', 'drop'
+    normalize: bool = True
+    log_transform: bool = False
+    remove_outliers: bool = True
+    outlier_threshold: float = 3.0  # Standard deviations for outlier detection
     
     def __post_init__(self):
-        if self.lag_periods is None:
-            self.lag_periods = [7, 30, 365]  # Weekly, monthly, yearly lags
-    
-    def ensure_directories(self):
-        """Create necessary directories if they don't exist."""
-        for directory in [self.output_dir, self.models_dir, self.plots_dir]:
-            os.makedirs(directory, exist_ok=True)
+        """Create directories if they don't exist."""
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.plots_dir, exist_ok=True)
+        os.makedirs(self.models_dir, exist_ok=True)
 
 @dataclass
 class CrossValidationConfig:
-    """Cross-validation strategy parameters."""
+    """Rolling-origin cross-validation parameters."""
     
-    # CV Strategy
-    strategy: str = "rolling_origin"  # 'rolling_origin' or 'time_series_split'
-    n_splits: int = 3
-    gap: int = 0  # Gap between train and test sets
+    # Rolling window parameters
+    initial_train_size: int = 365  # Days in initial training window
+    test_size: int = 30  # Days to forecast in each fold
+    step_size: int = 30  # Days to roll forward between folds
+    max_folds: Optional[int] = None  # Maximum number of folds (None = all possible)
     
-    # Split Strategy (for rolling origin)
-    train_years: List[List[int]] = None  # [[2019, 2020], [2019, 2021], [2019, 2022]]
-    test_years: List[List[int]] = None   # [[2021], [2022], [2023]]
+    # Validation strategy
+    use_gap: bool = False  # Whether to add gap between train and test
+    gap_size: int = 0  # Days of gap if use_gap=True
+    expanding_window: bool = True  # True = expanding window, False = sliding window
     
-    # Metrics Configuration
-    primary_metric: str = "mape"  # Primary metric for model selection
-    calculate_confidence_intervals: bool = True
-    confidence_level: float = 0.95
-    
-    def __post_init__(self):
-        if self.train_years is None:
-            self.train_years = []
-        if self.test_years is None:
-            self.test_years = []
+    # Ensemble settings
+    use_ensemble: bool = False
+    ensemble_method: str = "mean"  # Options: 'mean', 'median', 'weighted'
 
 @dataclass
 class FeatureEngineeringConfig:
     """Feature engineering parameters."""
     
-    # Lag Features
-    rolling_window_sizes: List[int] = None
+    # Temporal features
+    add_seasonality: bool = True
+    add_holidays: bool = True
+    country_holidays: str = "US"  # Country code for holidays
     
-    # Temporal Features
-    include_day_of_week: bool = True
-    include_month: bool = True
-    include_quarter: bool = True
-    include_day_of_year: bool = True
-    include_week_of_year: bool = True
-    include_is_weekend: bool = True
+    # Lag features
+    add_lag_features: bool = True
+    lag_values: List[int] = None
     
-    # Holiday Configuration
-    holiday_country: str = "US"
-    include_pre_holiday: bool = True
-    include_post_holiday: bool = True
-    holiday_lag_days: int = 1
+    # Rolling features
+    add_rolling_features: bool = True
+    rolling_windows: List[int] = None
     
-    # Seasonality
-    seasonal_periods: List[int] = None  # [7, 30, 365]
+    # Fourier features
+    add_fourier_features: bool = True
+    yearly_seasonality: int = 10
+    weekly_seasonality: int = 3
+    daily_seasonality: int = 4
     
     def __post_init__(self):
-        if self.rolling_window_sizes is None:
-            self.rolling_window_sizes = [7, 30]
-        if self.seasonal_periods is None:
-            self.seasonal_periods = [7, 30, 365]
+        if self.lag_values is None:
+            self.lag_values = [7, 14, 30, 90]
+        if self.rolling_windows is None:
+            self.rolling_windows = [7, 14, 30]
 
 @dataclass
 class EvaluationConfig:
-    """Evaluation and metrics configuration."""
+    """Model evaluation parameters."""
     
-    # Metrics to Calculate
-    calculate_mae: bool = True
-    calculate_rmse: bool = True
-    calculate_mape: bool = True
-    calculate_r2: bool = True
-    calculate_smape: bool = True
-    calculate_median_ae: bool = True
+    # Metrics to compute
+    compute_mae: bool = True
+    compute_rmse: bool = True
+    compute_mape: bool = True
+    compute_r2: bool = True
+    compute_mase: bool = True
     
-    # Error Analysis
-    analyze_directional_accuracy: bool = True
-    analyze_forecast_bias: bool = True
+    # Confidence intervals
+    confidence_level: float = 0.95
+    compute_prediction_intervals: bool = True
+    
+    # Error analysis
     analyze_residuals: bool = True
-    
-    # Comparison Baseline
-    use_naive_baseline: bool = True
-    use_seasonal_naive: bool = True
-    
-    # Report Generation
-    generate_detailed_report: bool = True
-    include_error_distribution: bool = True
-    include_residual_diagnostics: bool = True
+    test_stationarity: bool = True
+    test_autocorrelation: bool = True
 
 @dataclass
 class VisualizationConfig:
-    """Visualization parameters."""
+    """Plotting and visualization parameters."""
     
-    # Plot Settings
-    figure_size: Tuple[int, int] = (14, 7)
-    dpi: int = 300
+    # Plot settings
+    figure_size: Tuple[int, int] = (15, 6)
+    dpi: int = 100
     style: str = "seaborn-v0_8-darkgrid"
     
-    # Plot Types
-    plot_forecast: bool = True
-    plot_residuals: bool = True
+    # Components to plot
     plot_components: bool = True
-    plot_metrics: bool = True
-    plot_cv_results: bool = True
-    plot_feature_importance: bool = True
+    plot_parameters: bool = False
+    plot_trend: bool = True
+    plot_seasonality: bool = True
     
-    # Forecast Periods for Visualization
-    forecast_periods: List[int] = None
+    # Forecast plots
+    show_confidence_intervals: bool = True
+    highlight_forecast: bool = True
     
-    def __post_init__(self):
-        if self.forecast_periods is None:
-            self.forecast_periods = [30, 90, 180, 365]
+    # Save settings
+    save_plots: bool = True
+    plot_format: str = "png"  # Options: 'png', 'pdf', 'svg'
 
 class ProjectConfig:
-    """Master configuration class combining all sub-configurations."""
+    """Main project configuration container."""
     
     def __init__(self):
         self.model = ModelConfig()
@@ -196,11 +165,14 @@ class ProjectConfig:
         self.features = FeatureEngineeringConfig()
         self.evaluation = EvaluationConfig()
         self.visualization = VisualizationConfig()
-    
+        
     def initialize(self):
-        """Initialize all configuration settings."""
-        self.data.ensure_directories()
-    
+        """Initialize all sub-configurations."""
+        # Trigger __post_init__ for all configs
+        self.model.__post_init__()
+        self.data.__post_init__()
+        self.features.__post_init__()
+        
     def to_dict(self) -> dict:
         """Convert configuration to dictionary."""
         return {
