@@ -1,13 +1,10 @@
 """Configuration management for NeuralProphet time series forecasting.
-
 This module centralizes all configuration parameters for the neural_prophet_001 project,
 including model architecture, training parameters, data settings, and cross-validation options.
 """
-
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 import os
-
 
 @dataclass
 class ModelConfig:
@@ -39,7 +36,6 @@ class ModelConfig:
     def __post_init__(self):
         if self.hidden_layers is None:
             self.hidden_layers = [self.hidden_size // (2**i) for i in range(self.num_hidden_layers)]
-
 
 @dataclass
 class DataConfig:
@@ -86,7 +82,6 @@ class DataConfig:
         for directory in [self.output_dir, self.models_dir, self.plots_dir]:
             os.makedirs(directory, exist_ok=True)
 
-
 @dataclass
 class CrossValidationConfig:
     """Cross-validation strategy parameters."""
@@ -110,7 +105,6 @@ class CrossValidationConfig:
             self.train_years = []
         if self.test_years is None:
             self.test_years = []
-
 
 @dataclass
 class FeatureEngineeringConfig:
@@ -142,7 +136,6 @@ class FeatureEngineeringConfig:
         if self.seasonal_periods is None:
             self.seasonal_periods = [7, 30, 365]
 
-
 @dataclass
 class EvaluationConfig:
     """Evaluation and metrics configuration."""
@@ -169,7 +162,6 @@ class EvaluationConfig:
     include_error_distribution: bool = True
     include_residual_diagnostics: bool = True
 
-
 @dataclass
 class VisualizationConfig:
     """Visualization parameters."""
@@ -193,7 +185,6 @@ class VisualizationConfig:
     def __post_init__(self):
         if self.forecast_periods is None:
             self.forecast_periods = [30, 90, 180, 365]
-
 
 class ProjectConfig:
     """Master configuration class combining all sub-configurations."""
@@ -253,7 +244,6 @@ class ProjectConfig:
         
         print("\n" + "="*80)
 
-
 def get_config() -> ProjectConfig:
     """Factory function to get project configuration.
     
@@ -263,7 +253,6 @@ def get_config() -> ProjectConfig:
     config = ProjectConfig()
     config.initialize()
     return config
-
 
 if __name__ == "__main__":
     config = get_config()
