@@ -1,7 +1,30 @@
+# Core Data Processing
 pandas>=1.3.0
 numpy>=1.21.0
-matplotlib>=3.4.0
-scikit-learn>=0.24.0
+scipy>=1.7.0
+
+# Machine Learning & Time Series
 neuralprophet>=0.3.0
+scikit-learn>=0.24.0
+statsmodels>=0.13.0
+
+# Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+plotly>=5.0.0
+
+# Data Loading & Processing
 pyarrow>=5.0.0
+openpyxl>=3.0.0
+
+# Holiday Detection
+holidays>=0.13
+
+# Utilities
 pytest>=6.2.0
+tqdm>=4.62.0
+python-dotenv>=0.19.0
+
+# Optional: Advanced Features
+xgboost>=1.5.0
+lightgbm>=3.3.0
