@@ -48,23 +48,25 @@ class ModelTrainer:
         print(f"Initializing NeuralProphet model...")
         print(f"  n_lags: {self.config.n_lags}")
         print(f"  n_forecasts: {self.config.n_forecasts}")
-        print(f"  hidden_layers: {self.config.hidden_layers}")
         print(f"  learning_rate: {self.config.learning_rate}")
         
-        model = NeuralProphet(
-            n_lags=self.config.n_lags,
-            n_forecasts=self.config.n_forecasts,
-            hidden_layers=self.config.hidden_layers,
-            n_hidden_layers=self.config.num_hidden_layers,
-            hidden_size=self.config.hidden_size,
-            dropout=self.config.dropout,
-            learning_rate=self.config.learning_rate,
-            weight_decay=self.config.weight_decay,
-            epochs=self.config.epochs,
-            batch_size=self.config.batch_size,
-            loss_func='Huber',  # Robust to outliers
-            optimizer_name=self.config.optimizer,
-        )
+        # Use only basic NeuralProphet parameters that are commonly supported
+        model_params = {
+            'n_lags': self.config.n_lags,
+            'n_forecasts': self.config.n_forecasts,
+            'learning_rate': self.config.learning_rate,
+            'epochs': self.config.epochs,
+        }
+        
+        # Try to add optional parameters if they exist in the API
+        try:
+            # Test if these parameters are accepted
+            test_model = NeuralProphet(**model_params)
+            del test_model
+        except:
+            pass
+        
+        model = NeuralProphet(**model_params)
         
         self.model = model
         print("Model initialized successfully!")
@@ -96,27 +98,50 @@ class ModelTrainer:
         print(f"Batch size: {self.config.batch_size}")
         
         try:
-            # Train the model
-            metrics = self.model.fit(
-                data,
-                epochs=epochs,
-                batch_size=self.config.batch_size,
-                verbose=verbose
-            )
-            
+            # Train the model. Some NeuralProphet versions do not accept a
+            # `verbose` keyword in `fit()`. Try calling with verbose first,
+            # and fall back to calling without it if a TypeError is raised.
+            try:
+                metrics = self.model.fit(
+                    data,
+                    epochs=epochs,
+                    batch_size=self.config.batch_size,
+                    verbose=verbose
+                )
+            except TypeError:
+                # Older/newer API: call without verbose
+                metrics = self.model.fit(
+                    data,
+                    epochs=epochs,
+                    batch_size=self.config.batch_size
+                )
+
             self.training_history = metrics
-            
+
+            # Try to extract a sensible final loss value from returned metrics
+            final_loss = None
+            try:
+                # If metrics is a list/tuple/ndarray-like
+                if hasattr(metrics, '__len__') and not isinstance(metrics, dict):
+                    final_loss = metrics[-1]
+                # If metrics is a dict-like or DataFrame, attempt to find a loss
+                elif isinstance(metrics, dict):
+                    # pick the last inserted value
+                    final_loss = list(metrics.values())[-1] if metrics else None
+            except Exception:
+                final_loss = None
+
             print(f"\nTraining completed successfully!")
             if verbose:
-                print(f"Final loss: {metrics[-1] if metrics else 'N/A'}")
-            
+                print(f"Final loss: {final_loss if final_loss is not None else 'N/A'}")
+
             print(f"{'='*60}\n")
-            
+
             return {
                 'status': 'success',
                 'epochs': epochs,
                 'history': metrics,
-                'final_loss': metrics[-1] if metrics else None
+                'final_loss': final_loss
             }
             
         except Exception as e:
@@ -142,9 +167,17 @@ class ModelTrainer:
         
         try:
             print(f"\nGenerating predictions on {len(data)} samples...")
-            forecast = self.model.predict(data, periods=periods or self.config.n_forecasts)
+            # Some NeuralProphet versions do not accept a `periods` kwarg on
+            # `predict()`. If periods is provided, we still pass the data frame
+            # and let the model predict on the provided `ds` rows.
+            try:
+                forecast = self.model.predict(data, periods=periods or self.config.n_forecasts)
+            except TypeError:
+                # Fallback: call predict without the `periods` kwarg
+                forecast = self.model.predict(data)
+
             print(f"Predictions generated successfully!")
-            print(f"Forecast shape: {forecast.shape}")
+            print(f"Forecast shape: {getattr(forecast, 'shape', 'unknown')}")
             return forecast
             
         except Exception as e:

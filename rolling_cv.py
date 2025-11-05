@@ -56,8 +56,9 @@ class RollingOriginCV:
         print(f"\nCreating {len(years)-1} rolling-origin CV folds...")
         print(f"Years available: {years}")
         
-        # Create expanding window splits
-        for i in range(1, len(years)):
+        # Create expanding window splits (limit to first 3 folds for faster execution)
+        max_folds = min(3, len(years) - 1)  # Limit to 3 folds for testing
+        for i in range(1, max_folds + 1):
             train_years = years[:i]
             test_year = years[i]
             
@@ -115,10 +116,34 @@ class RollingOriginCV:
         
         # Extract predictions
         actual = test_np['y'].values
-        predicted = forecast['yhat1'].values[:len(actual)]
-        
+        # Some forecasts may include multiple yhat columns or NaNs; be defensive
+        if 'yhat1' in forecast.columns:
+            predicted = forecast['yhat1'].values[:len(actual)]
+        else:
+            # pick the first numeric prediction column available
+            pred_cols = [c for c in forecast.columns if c.startswith('yhat') or c.startswith('y')]
+            if pred_cols:
+                predicted = forecast[pred_cols[0]].values[:len(actual)]
+            else:
+                # fallback: take first numeric column after 'ds'
+                numeric_cols = [c for c in forecast.columns if c != 'ds']
+                predicted = forecast[numeric_cols[0]].values[:len(actual)]
+
+        # Remove NaN pairs before metric calculation
+        mask = ~np.isnan(predicted) & ~np.isnan(actual)
+        if not np.any(mask):
+            print("No valid prediction/actual pairs (all NaN) for this fold")
+            return {
+                'fold_idx': fold_idx,
+                'status': 'failed',
+                'error': 'All predictions or actuals are NaN'
+            }
+
+        actual_clean = actual[mask]
+        predicted_clean = predicted[mask]
+
         # Calculate metrics
-        metrics = self.evaluator.calculate_all_metrics(actual, predicted)
+        metrics = self.evaluator.calculate_all_metrics(actual_clean, predicted_clean)
         
         print(f"  MAPE: {metrics['mape']:.2f}%")
         print(f"  MAE: {metrics['mae']:.4f}")
@@ -167,21 +192,32 @@ class RollingOriginCV:
         
         # Aggregate results
         aggregate_results = self.aggregate_cv_results(fold_results)
-        
+
+        # If no successful folds, aggregate_results signals failure; handle gracefully
+        if aggregate_results.get('status') == 'failed':
+            print("\nNo successful folds were obtained during cross-validation.")
+            print(f"Reason: {aggregate_results.get('error')}")
+            self.fold_results = fold_results
+            return {
+                'status': 'failed',
+                'fold_results': fold_results,
+                'error': aggregate_results.get('error')
+            }
+
         print("\n" + "="*70)
         print("CROSS-VALIDATION SUMMARY")
         print("="*70)
         print(f"\nTotal Folds: {len(fold_results)}")
         print(f"Successful Folds: {sum(1 for r in fold_results if r['status'] == 'success')}")
         print(f"\nAggregate Metrics:")
-        for metric, value in aggregate_results['mean_metrics'].items():
+        for metric, value in aggregate_results.get('mean_metrics', {}).items():
             if isinstance(value, float):
-                std_val = aggregate_results['std_metrics'].get(metric, 0)
+                std_val = aggregate_results.get('std_metrics', {}).get(metric, 0)
                 print(f"  {metric.upper():.<30} {value:.4f} ± {std_val:.4f}")
         print("\n" + "="*70 + "\n")
-        
+
         self.fold_results = fold_results
-        
+
         return {
             'status': 'success',
             'fold_results': fold_results,

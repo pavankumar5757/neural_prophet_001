@@ -12,6 +12,7 @@ Executes complete pipeline:
 import sys
 import os
 from datetime import datetime
+from typing import Dict
 import pandas as pd
 import numpy as np
 import warnings
@@ -52,8 +53,7 @@ class NeuralProphetPipeline:
         print("NEURAL PROPHET TIME SERIES FORECASTING - IMPROVED V2.0")
         print("="*80 + "\n")
         
-        # Initialize directories
-        self.config.data.ensure_directories()
+        # Directories are initialized in DataConfig.__post_init__
     
     def execute_pipeline(self) -> Dict:
         """Execute complete forecasting pipeline.
@@ -172,16 +172,32 @@ class NeuralProphetPipeline:
         # Predict on test set
         if train_result['status'] == 'success':
             forecast = self.model_trainer.predict(test_np)
-            
-            # Extract predictions
+
+            # Extract predictions defensively and align with actuals
             actual = test_np['y'].values
-            predicted = forecast['yhat1'].values[:len(actual)]
-            
+            if 'yhat1' in forecast.columns:
+                predicted = forecast['yhat1'].values[:len(actual)]
+            else:
+                pred_cols = [c for c in forecast.columns if c.startswith('yhat') or c.startswith('y')]
+                if pred_cols:
+                    predicted = forecast[pred_cols[0]].values[:len(actual)]
+                else:
+                    numeric_cols = [c for c in forecast.columns if c != 'ds']
+                    predicted = forecast[numeric_cols[0]].values[:len(actual)]
+
+            # Remove NaNs before metric calculation and plotting
+            mask = ~np.isnan(predicted) & ~np.isnan(actual)
+            if not np.any(mask):
+                return {'status': 'failed', 'error': 'All predictions or actuals are NaN'}
+
+            actual_clean = actual[mask]
+            predicted_clean = predicted[mask]
+
             # Calculate metrics
-            metrics = self.evaluator.calculate_all_metrics(actual, predicted)
-            
-            # Generate visualizations
-            self.generate_visualizations(actual, predicted, forecast, test_np)
+            metrics = self.evaluator.calculate_all_metrics(actual_clean, predicted_clean)
+
+            # Generate visualizations using cleaned arrays
+            self.generate_visualizations(actual_clean, predicted_clean, forecast, test_np.iloc[mask])
             
             print("\nFinal Test Metrics:")
             self.evaluator.print_metrics_report(metrics)
@@ -268,8 +284,9 @@ def main():
     print(f"  - n_forecasts: {config.model.n_forecasts}")
     print(f"  - hidden_layers: {config.model.hidden_layers}")
     print(f"  - epochs: {config.model.epochs}")
-    print(f"CV Strategy: {config.cv.strategy}")
-    print(f"CV Splits: {config.cv.n_splits}")
+    print(f"CV Strategy: Rolling-origin (expanding window: {config.cv.expanding_window})")
+    print(f"CV Initial Train Size: {config.cv.initial_train_size} days")
+    print(f"CV Test Size: {config.cv.test_size} days")
     print("-" * 80 + "\n")
     
     # Execute pipeline

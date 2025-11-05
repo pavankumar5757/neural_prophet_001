@@ -43,7 +43,7 @@ class FeatureEngineer:
         Returns:
             pd.DataFrame: DataFrame with added lag features.
         """
-        lag_periods = lag_periods or self.config.rolling_window_sizes
+        lag_periods = lag_periods or self.config.lag_values
         
         print(f"Adding lag features for periods: {lag_periods}")
         
@@ -65,7 +65,7 @@ class FeatureEngineer:
         Returns:
             pd.DataFrame: DataFrame with added rolling features.
         """
-        window_sizes = window_sizes or self.config.rolling_window_sizes
+        window_sizes = window_sizes or self.config.rolling_windows
         
         print(f"Adding rolling statistics for windows: {window_sizes}")
         
@@ -100,29 +100,24 @@ class FeatureEngineer:
         """
         print("Adding temporal features...")
         
-        if self.config.include_day_of_week:
-            data['day_of_week'] = data[date_col].dt.dayofweek
-            data['day_of_week_sin'] = np.sin(2 * np.pi * data['day_of_week'] / 7)
-            data['day_of_week_cos'] = np.cos(2 * np.pi * data['day_of_week'] / 7)
+        # Always add basic temporal features
+        data['day_of_week'] = data[date_col].dt.dayofweek
+        data['day_of_week_sin'] = np.sin(2 * np.pi * data['day_of_week'] / 7)
+        data['day_of_week_cos'] = np.cos(2 * np.pi * data['day_of_week'] / 7)
         
-        if self.config.include_month:
-            data['month'] = data[date_col].dt.month
-            data['month_sin'] = np.sin(2 * np.pi * data['month'] / 12)
-            data['month_cos'] = np.cos(2 * np.pi * data['month'] / 12)
+        data['month'] = data[date_col].dt.month
+        data['month_sin'] = np.sin(2 * np.pi * data['month'] / 12)
+        data['month_cos'] = np.cos(2 * np.pi * data['month'] / 12)
         
-        if self.config.include_quarter:
-            data['quarter'] = data[date_col].dt.quarter
+        data['quarter'] = data[date_col].dt.quarter
         
-        if self.config.include_day_of_year:
-            data['day_of_year'] = data[date_col].dt.dayofyear
-            data['day_of_year_sin'] = np.sin(2 * np.pi * data['day_of_year'] / 365)
-            data['day_of_year_cos'] = np.cos(2 * np.pi * data['day_of_year'] / 365)
+        data['day_of_year'] = data[date_col].dt.dayofyear
+        data['day_of_year_sin'] = np.sin(2 * np.pi * data['day_of_year'] / 365)
+        data['day_of_year_cos'] = np.cos(2 * np.pi * data['day_of_year'] / 365)
         
-        if self.config.include_week_of_year:
-            data['week_of_year'] = data[date_col].dt.isocalendar().week
+        data['week_of_year'] = data[date_col].dt.isocalendar().week
         
-        if self.config.include_is_weekend:
-            data['is_weekend'] = (data['day_of_week'] >= 5).astype(int)
+        data['is_weekend'] = (data['day_of_week'] >= 5).astype(int)
         
         return data
     
@@ -140,13 +135,13 @@ class FeatureEngineer:
         
         try:
             import holidays
-            country_holidays = holidays.country_holidays(self.config.holiday_country)
+            country_holidays = holidays.country_holidays(self.config.country_holidays)
             year_holidays = [date for date, name in sorted(country_holidays.items()) 
                             if date.year == year]
             self.holidays_cache[year] = year_holidays
             return year_holidays
         except:
-            print(f"Warning: Could not load holidays for {self.config.holiday_country}")
+            print(f"Warning: Could not load holidays for {self.config.country_holidays}")
             return []
     
     def add_holidays(self, data: pd.DataFrame,
@@ -160,27 +155,17 @@ class FeatureEngineer:
         Returns:
             pd.DataFrame: DataFrame with added holiday features.
         """
-        print(f"Adding holiday features for country: {self.config.holiday_country}")
+        print(f"Adding holiday features for country: {self.config.country_holidays}")
         
         data['is_holiday'] = 0
-        data['holiday_lag'] = 0
         
         for year in data[date_col].dt.year.unique():
-            holidays = self.get_holidays(year)
+            holidays_list = self.get_holidays(year)
             
             # Mark holidays
-            for holiday in holidays:
+            for holiday in holidays_list:
                 mask = data[date_col].dt.date == holiday.date()
                 data.loc[mask, 'is_holiday'] = 1
-            
-            # Mark days before and after holidays
-            if self.config.include_pre_holiday or self.config.include_post_holiday:
-                for holiday in holidays:
-                    if self.config.include_pre_holiday:
-                        for lag_day in range(1, self.config.holiday_lag_days + 1):
-                            pre_date = (holiday - timedelta(days=lag_day)).date()
-                            mask = data[date_col].dt.date == pre_date
-                            data.loc[mask, 'holiday_lag'] = lag_day
         
         return data
     
@@ -195,9 +180,11 @@ class FeatureEngineer:
         Returns:
             pd.DataFrame: DataFrame with added seasonality features.
         """
-        print(f"Adding seasonality features for periods: {self.config.seasonal_periods}")
+        print(f"Adding seasonality features")
         
-        for period in self.config.seasonal_periods:
+        # Use common seasonal periods
+        seasonal_periods = [7, 30, 365]  # Weekly, monthly, yearly
+        for period in seasonal_periods:
             # Seasonal mean
             seasonal_mean = data.groupby(data.index % period)[target_col].mean()
             data[f'seasonal_mean_{period}'] = data.index.map(
@@ -275,23 +262,21 @@ class FeatureEngineer:
         original_cols = set(data.columns)
         
         # Add temporal features first (no dependency)
-        if self.config.include_day_of_week or self.config.include_month:
-            data = self.add_temporal_features(data, date_col)
+        data = self.add_temporal_features(data, date_col)
         
         # Add lag features
-        if self.config.use_lag_features:
+        if self.config.add_lag_features:
             data = self.add_lag_features(data, target_col)
         
         # Add rolling statistics
-        if self.config.use_rolling_stats:
+        if self.config.add_rolling_features:
             data = self.add_rolling_stats(data, target_col)
         
         # Add seasonality
-        if self.config.use_seasonality:
-            data = self.add_seasonality_features(data, target_col)
+        data = self.add_seasonality_features(data, target_col)
         
         # Add holidays
-        if self.config.use_holidays:
+        if self.config.add_holidays:
             data = self.add_holidays(data, date_col)
         
         # Add differencing
@@ -301,7 +286,7 @@ class FeatureEngineer:
         data = self.add_pct_change_features(data, target_col)
         
         # Fill NaN values created by feature engineering
-        data = data.fillna(method='bfill').fillna(method='ffill')
+        data = data.bfill().ffill()
         
         new_cols = set(data.columns) - original_cols
         print(f"\nCreated {len(new_cols)} new features:")
@@ -319,25 +304,14 @@ class FeatureEngineer:
         Returns:
             List[str]: List of feature names that will be created.
         """
-        features = []
-        
-        if self.config.include_day_of_week:
-            features.extend(['day_of_week', 'day_of_week_sin', 'day_of_week_cos'])
-        
-        if self.config.include_month:
-            features.extend(['month', 'month_sin', 'month_cos'])
-        
-        if self.config.include_quarter:
-            features.append('quarter')
-        
-        if self.config.include_day_of_year:
-            features.extend(['day_of_year', 'day_of_year_sin', 'day_of_year_cos'])
-        
-        if self.config.include_week_of_year:
-            features.append('week_of_year')
-        
-        if self.config.include_is_weekend:
-            features.append('is_weekend')
+        features = [
+            'day_of_week', 'day_of_week_sin', 'day_of_week_cos',
+            'month', 'month_sin', 'month_cos',
+            'quarter',
+            'day_of_year', 'day_of_year_sin', 'day_of_year_cos',
+            'week_of_year',
+            'is_weekend'
+        ]
         
         return features
 

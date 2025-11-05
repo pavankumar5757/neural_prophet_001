@@ -69,7 +69,7 @@ class Visualizer:
         if save_path:
             plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Plot saved to {save_path}")
-        plt.show()
+        plt.close()
     
     def plot_actual_vs_predicted(self, actual: np.ndarray,
                                 predicted: np.ndarray,
@@ -98,7 +98,7 @@ class Visualizer:
         if save_path:
             plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Plot saved to {save_path}")
-        plt.show()
+        plt.close()
     
     def plot_residuals(self, actual: np.ndarray,
                       predicted: np.ndarray,
@@ -150,7 +150,7 @@ class Visualizer:
         if save_path:
             plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Plot saved to {save_path}")
-        plt.show()
+        plt.close()
     
     def plot_metrics_comparison(self, metrics_dict: Dict[str, float],
                                title: str = "Metrics Comparison",
@@ -184,7 +184,7 @@ class Visualizer:
         if save_path:
             plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Plot saved to {save_path}")
-        plt.show()
+        plt.close()
     
     def plot_cv_results(self, cv_scores: List[float],
                        fold_labels: Optional[List[str]] = None,
@@ -221,7 +221,7 @@ class Visualizer:
         if save_path:
             plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Plot saved to {save_path}")
-        plt.show()
+        plt.close()
     
     def plot_error_distribution(self, actual: np.ndarray,
                                predicted: np.ndarray,
@@ -264,7 +264,7 @@ class Visualizer:
         if save_path:
             plt.savefig(save_path, dpi=self.dpi, bbox_inches='tight')
             print(f"Plot saved to {save_path}")
-        plt.show()
+        plt.close()
 
 
 if __name__ == "__main__":

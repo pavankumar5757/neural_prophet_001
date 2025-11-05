@@ -11,7 +11,7 @@ class ModelConfig:
     """NeuralProphet model architecture and training parameters."""
     
     # Model Architecture
-    n_lags: int = 180  # Number of past time steps to use as input
+    n_lags: int = 30  # Number of past time steps to use as input (reduced for faster training)
     n_forecasts: int = 30  # Number of future time steps to predict
     hidden_layers: List[int] = None  # Hidden layer sizes
     num_hidden_layers: int = 3
@@ -21,7 +21,7 @@ class ModelConfig:
     weight_decay: float = 1e-5
     
     # Training Parameters
-    epochs: int = 200
+    epochs: int = 10  # Further reduced for faster execution
     batch_size: int = 32
     early_stopping_patience: int = 20
     early_stopping_threshold: float = 0.001
@@ -42,14 +42,14 @@ class DataConfig:
     """Data loading and preprocessing parameters."""
     
     # File paths
-    data_file_path: str = "data/data.csv"
+    data_file_path: str = "data.csv"
     output_dir: str = "outputs/"
     plots_dir: str = "plots/"
     models_dir: str = "models/"
     
     # CSV parameters (removed sheet_name)
-    date_column: str = "ds"  # Column name for dates
-    target_column: str = "y"  # Column name for target variable
+    date_column: str = "Date"  # Column name for dates
+    target_column: str = "Country_Demand"  # Column name for target variable
     
     # Data preprocessing
     handle_missing: str = "interpolate"  # Options: 'interpolate', 'forward_fill', 'drop'

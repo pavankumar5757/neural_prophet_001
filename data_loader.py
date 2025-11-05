@@ -40,13 +40,14 @@ class DataLoader:
         print("LOADING DATA")
         print("="*60)
         
-        # Load CSV file
+        # Load CSV file - skip first 5 header rows
         data = pd.read_csv(
             self.config.data_file_path,
+            skiprows=5,
             parse_dates=[self.config.date_column]
         )
         
-        print(f"✓ Data loaded from: {self.config.data_file_path}")
+        print(f"[OK] Data loaded from: {self.config.data_file_path}")
         print(f"  - Rows: {len(data)}")
         print(f"  - Columns: {list(data.columns)}")
         print(f"  - Date range: {data[self.config.date_column].min()} to {data[self.config.date_column].max()}")
@@ -80,10 +81,10 @@ class DataLoader:
         # Check for duplicates
         duplicates = data[self.config.date_column].duplicated().sum()
         if duplicates > 0:
-            print(f"  ⚠ Warning: {duplicates} duplicate dates found, keeping first occurrence")
+            print(f"  [WARN] Warning: {duplicates} duplicate dates found, keeping first occurrence")
             data = data.drop_duplicates(subset=[self.config.date_column], keep='first')
         
-        print("✓ Data validated successfully")
+        print("[OK] Data validated successfully")
         return data
     
     def handle_missing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -101,20 +102,20 @@ class DataLoader:
         print(f"  - Missing values in target: {missing_count}")
         
         if missing_count == 0:
-            print("✓ No missing values found")
+            print("[OK] No missing values found")
             return data
         
         if self.config.handle_missing == 'interpolate':
             data[self.config.target_column] = data[self.config.target_column].interpolate(method='linear')
-            print("✓ Missing values interpolated")
+            print("[OK] Missing values interpolated")
         elif self.config.handle_missing == 'forward_fill':
-            data[self.config.target_column] = data[self.config.target_column].fillna(method='ffill')
-            print("✓ Missing values forward-filled")
+            data[self.config.target_column] = data[self.config.target_column].ffill()
+            print("[OK] Missing values forward-filled")
         elif self.config.handle_missing == 'drop':
             data = data.dropna(subset=[self.config.target_column])
-            print(f"✓ Dropped {missing_count} rows with missing values")
+            print(f"[OK] Dropped {missing_count} rows with missing values")
         else:
-            print("⚠ Unknown method, keeping missing values")
+            print("[WARN] Unknown method, keeping missing values")
         
         return data
     
@@ -130,7 +131,7 @@ class DataLoader:
         print("\nDetecting outliers...")
         
         if not self.config.remove_outliers:
-            print("✓ Outlier detection skipped (remove_outliers=False)")
+            print("[OK] Outlier detection skipped (remove_outliers=False)")
             return data, pd.Series([False] * len(data))
         
         # Calculate z-scores
@@ -144,7 +145,7 @@ class DataLoader:
         print(f"  - Outliers detected: {outlier_count}")
         
         if outlier_count > 0 and self.config.remove_outliers:
-            print(f"✓ Outliers flagged (threshold: {self.config.outlier_threshold} std)")
+            print(f"[OK] Outliers flagged (threshold: {self.config.outlier_threshold} std)")
         
         return data, outliers
     
@@ -161,7 +162,7 @@ class DataLoader:
         print("\nNormalizing data...")
         
         if not self.config.normalize:
-            print("✓ Normalization skipped (normalize=False)")
+            print("[OK] Normalization skipped (normalize=False)")
             return data
         
         if fit_scaler:
@@ -169,14 +170,14 @@ class DataLoader:
             data[self.config.target_column] = self.target_scaler.fit_transform(
                 data[[self.config.target_column]]
             )
-            print("✓ Data normalized (fitted scaler)")
+            print("[OK] Data normalized (fitted scaler)")
         else:
             if self.target_scaler is None:
                 raise ValueError("Scaler not fitted. Call with fit_scaler=True first.")
             data[self.config.target_column] = self.target_scaler.transform(
                 data[[self.config.target_column]]
             )
-            print("✓ Data normalized (using existing scaler)")
+            print("[OK] Data normalized (using existing scaler)")
         
         return data
     
@@ -222,7 +223,7 @@ class DataLoader:
         print(f"  - Train: {len(train_data)} samples ({train_ratio*100:.1f}%)")
         print(f"  - Val:   {len(val_data)} samples ({val_ratio*100:.1f}%)")
         print(f"  - Test:  {len(test_data)} samples ({(1-train_ratio-val_ratio)*100:.1f}%)")
-        print("✓ Data split completed")
+        print("[OK] Data split completed")
         
         return {
             'train': train_data,
@@ -230,7 +231,7 @@ class DataLoader:
             'test': test_data
         }
     
-    def preprocess_complete(self) -> pd.DataFrame:
+    def preprocess_complete(self, data: pd.DataFrame = None) -> pd.DataFrame:
         """Complete preprocessing pipeline.
         
         Returns:
@@ -240,8 +241,9 @@ class DataLoader:
         print("STARTING COMPLETE PREPROCESSING PIPELINE")
         print("="*60)
         
-        # Load
-        data = self.load_data()
+        # Load if data not provided
+        if data is None:
+            data = self.load_data()
         
         # Validate
         data = self.validate_data(data)
